@@ -1,9 +1,10 @@
-from aiohttp import ClientSession, ClientResponse, TCPConnector
+from aiohttp import ClientSession, TCPConnector
 from os import name as os_name
 
 
 import asyncio
 import aiohttp.resolver
+
 
 aiohttp.resolver.DefaultResolver = aiohttp.resolver.AsyncResolver
 if os_name == 'nt':

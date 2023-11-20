@@ -184,3 +184,7 @@ poetry.toml
 
 # LSP config files
 pyrightconfig.json
+
+# breach-check data
+*.txt
+output_*.json
