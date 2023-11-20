@@ -1,5 +1,5 @@
 from aiohttp.client_exceptions import ClientProxyConnectionError
-from asyncio import run, ensure_future, gather
+from asyncio import ensure_future, gather
 from breach_check.http import AsyncRequests
 from breach_check.logger import logger, console
 from json import loads as json_loads
