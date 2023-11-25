@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "breach-check"
-version = "0.1.1"
+version = "0.1.0"
 description = "check for data breaches for provided emails"
 authors = ["Dhrumil Mistry <56185972+dmdhrumilmistry@users.noreply.github.com>"]
 license = "MIT"
