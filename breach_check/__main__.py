@@ -1,6 +1,6 @@
 from argparse import ArgumentParser
 from breach_check.breach import BreachChecker
-from breach_check.logger import console
+from breach_check.results import Results
 from breach_check.utils import generate_unique_filename, extract_emails, write_json_file
 from asyncio import run
 from sys import exit
@@ -16,6 +16,7 @@ def main():
     args = parser.parse_args()
 
     emails = extract_emails(args.input_file)
+    result_handler = Results()
 
     if not emails:
         exit(-1)
@@ -24,9 +25,12 @@ def main():
         BreachChecker().mass_check(emails=emails)
     )
 
-    if not write_json_file(args.output_file, results):
-        console.print('Results:')
-        console.print(results)
+    result_handler.write_json_results_to_file(
+        output_file=args.output_file,
+        results=results
+    )
+
+    result_handler.generate_table(results=results)
 
 
 if __name__ == '__main__':
