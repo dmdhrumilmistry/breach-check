@@ -1,9 +1,8 @@
+from asyncio import run
 from argparse import ArgumentParser
 from breach_check.breach import BreachChecker
 from breach_check.results import Results
-from breach_check.utils import generate_unique_filename, extract_emails, write_json_file
-from asyncio import run
-from sys import exit
+from breach_check.utils import generate_unique_filename, extract_emails
 
 
 def main():
