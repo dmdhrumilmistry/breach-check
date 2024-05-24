@@ -26,12 +26,15 @@ class ResultTableHandler:
         formatted_results = []
         for result in results:
             email = result.get('email')
-            breaches = filter(
+            breaches = list(filter(
                 lambda domain: domain.strip() if domain else '',
-                [breach.get('Domain', '').strip()
+                [breach.get('name', '').strip()
                  for breach in result.get('breaches')]
-            )
+            ))
             total = result.get('total')
+
+            if not breaches:
+                breaches = ['[green]-[/green]']
 
             formatted_result = {
                 'email': email,
