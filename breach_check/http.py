@@ -1,104 +1,147 @@
-from aiohttp import ClientSession, TCPConnector
-from os import name as os_name
-
-
+"""
+module for interacting with HTTP layer
+"""
 import asyncio
+from random import choice
+from os import name as os_name
+from urllib.parse import urlparse
+
+from aiohttp import ClientSession, ClientTimeout
+from aiolimiter import AsyncLimiter
+from tenacity import retry, stop_after_attempt, retry_if_not_exception_type
+
 import aiohttp.resolver
-
-
 aiohttp.resolver.DefaultResolver = aiohttp.resolver.AsyncResolver
-if os_name == 'nt':
+if os_name == "nt":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-class AsyncRequests:
-    '''
-    AsyncRequests class helps to send HTTP requests with rate limiting options.
-    '''
+class Proxies:
+    """
+    class for handling proxies
+    """
 
-    def __init__(self, rate_limit: int | None = None, delay: float | None = None, headers: dict | None = None, proxy: str | None = None, ssl: bool | None = True, allow_redirects: bool | None = True) -> None:
-        '''AsyncRequests class constructor
+    def __init__(self, proxies: list[str] | None) -> None:
+        self.p_list = proxies
+
+    def validate_proxy(self, proxy_url: str | None):
+        """
+        Validates a proxy URL based on format and attempts a basic connection.
 
         Args:
-            rate_limit (int): number of concurrent requests at the same time
+            proxy_url: The URL of the proxy server.
+
+        Returns:
+            True if the proxy URL seems valid and a basic connection can be established, False otherwise.
+        """
+        # Check for valid URL format
+        # TODO: implement url parse security: https://docs.python.org/3/library/urllib.parse.html#url-parsing-security
+        parsed_url = urlparse(proxy_url)
+        if all([parsed_url.scheme, parsed_url.netloc]):
+            return True
+
+        return False
+
+    def get_random_proxy(self) -> str | None:
+        """
+        Returns random proxy from the list
+        """
+        if not self.p_list:
+            return None
+        return choice(self.p_list)
+
+
+class AsyncRequests:
+    """
+    AsyncRequests class helps to send HTTP requests with rate limiting options.
+    """
+
+    def __init__(
+        self,
+        rate_limit: float = 50,
+        headers: dict | None = None,
+        proxies: list[str] | None = [],
+        allow_redirects: bool = True,
+        timeout: float = 60,
+        ssl: bool = False,
+    ) -> None:
+        """AsyncRequests class constructor
+
+        Args:
+            rate_limit (int): number of requests per seconds
             delay (float): delay between consecutive requests
             headers (dict): overrides default headers while sending HTTP requests
             proxy (str): proxy URL to be used while sending requests
-            ssl (bool): ignores few SSL errors if value is False
+            timeout (float): total timeout parameter of aiohttp.ClientTimeout
+            ssl (bool): enforces tls/ssl verification if True
 
         Returns:
             None
-        '''
-        self._rate_limit = rate_limit
-        self._delay = delay
+        """
         self._headers = headers
-        self._proxy = proxy if proxy else None
-        self._ssl = ssl if ssl else None
+        self._proxy = Proxies(proxies=proxies)
         self._allow_redirects = allow_redirects
+        self._limiter = AsyncLimiter(max_rate=rate_limit, time_period=1)
+        self._timeout = ClientTimeout(total=timeout)
+        self._ssl = ssl
 
-    async def request(self, url: str, method: str = 'GET', session: ClientSession | None = None, *args, **kwargs) -> dict:
-        '''Send HTTP requests asynchronously
+    @retry(
+        stop=stop_after_attempt(3),
+        retry=retry_if_not_exception_type(
+            KeyboardInterrupt or asyncio.exceptions.CancelledError
+        ),
+    )
+    async def request(self, url: str, *args, method: str = "GET", **kwargs) -> dict:
+        """Send HTTP requests asynchronously
 
         Args:
             url (str): URL of the webpage/endpoint
-            method (str): HTTP methods (default: GET) supports GET, POST, 
+            method (str): HTTP methods (default: GET) supports GET, POST,
             PUT, HEAD, OPTIONS, DELETE
-            session (aiohttp.ClientSession): aiohttp Client Session for sending requests
-
 
         Returns:
             dict: returns request and response data as dict
-        '''
-        is_new_session = False
-        limit = self._rate_limit if self._rate_limit else 100
-        connector = TCPConnector(ssl=self._ssl, limit=limit)
+        """
+        async with self._limiter:
+            async with ClientSession(
+                headers=self._headers, timeout=self._timeout
+            ) as session:
+                method = str(method).upper()
+                match method:
+                    case "GET":
+                        req_method = session.get
+                    case "POST":
+                        req_method = session.post
+                    case "PUT":
+                        req_method = session.put
+                    case "PATCH":
+                        req_method = session.patch
+                    case "HEAD":
+                        req_method = session.head
+                    case "OPTIONS":
+                        req_method = session.options
+                    case "DELETE":
+                        req_method = session.delete
+                    case _:
+                        req_method = session.get
 
-        if not session:
-            session = ClientSession(headers=self._headers, connector=connector)
-            is_new_session = True
+                async with req_method(
+                    url,
+                    allow_redirects=self._allow_redirects,
+                    proxy=self._proxy.get_random_proxy(),
+                    ssl=self._ssl,
+                    *args,
+                    **kwargs,
+                ) as response:
+                    resp_data = {
+                        "status": response.status,
+                        "req_url": str(response.request_info.real_url),
+                        "query_url": str(response.url),
+                        "req_method": response.request_info.method,
+                        "req_headers": dict(**response.request_info.headers),
+                        "res_redirection": str(response.history),
+                        "res_headers": dict(response.headers),
+                        "res_body": await response.text(),
+                    }
 
-        method = str(method).upper()
-        match method:
-            case 'GET':
-                sent_req = session.get(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'POST':
-                sent_req = session.post(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'PUT':
-                sent_req = session.put(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'PATCH':
-                sent_req = session.patch(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'HEAD':
-                sent_req = session.head(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'OPTIONS':
-                sent_req = session.options(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-            case 'DELETE':
-                sent_req = session.delete(
-                    url, proxy=self._proxy, allow_redirects=self._allow_redirects, *args, **kwargs)
-
-        resp_data = None
-        async with sent_req as response:
-            resp_data = {
-                "status": response.status,
-                "req_url": str(response.request_info.real_url),
-                "query_url": str(response.url),
-                "req_method": response.request_info.method,
-                "req_headers": dict(**response.request_info.headers),
-                "res_redirection": str(response.history),
-                "res_headers": dict(response.headers),
-                "res_body": await response.text(),
-            }
-
-            if is_new_session:
-                await session.close()
-                del session
-
-        if self._delay:
-            await asyncio.sleep(self._delay)
-
-        return resp_data
+                return resp_data
