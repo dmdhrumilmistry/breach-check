@@ -2,7 +2,7 @@
 This module contains the implementation of MozillaMonitor class which checks email breaches using mozilla monitor API.
 """
 from json import loads as json_loads
-from breach_check.breach_factory.base import BaseBreachBackend
+from breach_check.breach_factory.base import BaseBreachBackend, ResultSchema
 from breach_check.logger import logger
 from breach_check.http import AsyncRequests
 
@@ -36,6 +36,7 @@ class MozillaMonitor(BaseBreachBackend):
 
         status_code = response.get('status')
         res_body = json_loads(response.get('res_body', '{}'))
+        breach_sources = response.get('',[])
         is_success = res_body.get('success', False)
 
         if status_code == 200 and is_success:
@@ -43,6 +44,18 @@ class MozillaMonitor(BaseBreachBackend):
             total = res_body.get('total', -1)
             res_data['breaches'] = breaches
             res_data['total'] = total
+
+            breaches = list(filter(
+                lambda domain: domain.strip() if domain else '',
+                [breach.get('Domain', '').strip()
+                 for breach in breach_sources]
+            ))
+
+            self.result_schemas.append(ResultSchema(
+                email=email,
+                breaches=breaches,
+                total=total,
+            ))
 
         elif status_code == 429:
             logger.warning('Rate Limited')
