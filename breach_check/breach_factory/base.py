@@ -1,8 +1,18 @@
 """
 Base class for breach backends.
 """
-from ..http import AsyncRequests
+from dataclasses import dataclass, fields
+from breach_check.http import AsyncRequests
 
+@dataclass
+class ResultSchema:
+    email: str
+    breaches: list[str]
+    total: int
+
+    @classmethod
+    def get_fields(cls) -> list[str]:
+        return sorted([field.name for field in fields(cls)])
 
 class BaseBreachBackend:
     """
@@ -17,6 +27,7 @@ class BaseBreachBackend:
 
     def __init__(self, http_client: AsyncRequests) -> None:
         self._http_client = http_client
+        self.result_schemas:list[ResultSchema] = []
 
     async def check_email_breaches(self, email: str):
         """
@@ -29,4 +40,3 @@ class BaseBreachBackend:
             dict: A dictionary containing the results of the breach check.
         """
         raise NotImplementedError
-

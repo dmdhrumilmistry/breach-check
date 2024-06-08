@@ -1,3 +1,4 @@
+from breach_check.breach_factory.base import ResultSchema
 from breach_check.logger import console
 from breach_check.utils import write_json_file
 from rich.table import Table, Column
@@ -17,37 +18,31 @@ class ResultTableHandler:
         self.console.rule()
 
     def extract_result_table_cols(self, results: list[dict]) -> list[str]:
-        return sorted({key for dictionary in results for key in dictionary.keys()})
+        return sorted({key for dictionary in results.__dict__ for key in dictionary.keys()})
 
-    def generate_result_cols(self, results_list: list[dict]) -> list[Column]:
-        return [Column(header=col_header, overflow='fold') for col_header in self.extract_result_table_cols(results_list)]
+    def generate_result_cols(self) -> list[Column]:
+        return [Column(header=col_header, overflow='fold') for col_header in ResultSchema.get_fields()]
 
-    def _represent_results(self, results: list):
+    def _represent_results(self, results: list[ResultSchema]):
         formatted_results = []
         for result in results:
-            email = result.get('email')
-            breaches = list(filter(
-                lambda domain: domain.strip() if domain else '',
-                [breach.get('name', '').strip()
-                 for breach in result.get('breaches')]
-            ))
-            total = result.get('total')
-
+            
+            breaches = result.breaches
             if not breaches:
                 breaches = ['[green]-[/green]']
 
             formatted_result = {
-                'email': email,
+                'email': result.email,
                 'breaches': ','.join(breaches),
-                'total': total
+                'total': result.total
             }
             formatted_results.append(formatted_result)
 
         return formatted_results
 
-    def generate_result_table(self, results: list):
-        results = self._represent_results(results=results)
-        cols = self.generate_result_cols(results)
+    def generate_result_table(self, results: list[ResultSchema]):
+        results:list[dict] = self._represent_results(results=results)
+        cols = self.generate_result_cols()
         table = Table(*cols)
 
         for result in results:
@@ -68,7 +63,7 @@ class Results:
             console.print(results)
 
     @staticmethod
-    def generate_table(results: list[str], table_width_percentage: float = 98.0):
+    def generate_table(results: list[ResultSchema], table_width_percentage: float = 98.0):
         table_handler = ResultTableHandler(
             table_width_percentage=table_width_percentage
         )

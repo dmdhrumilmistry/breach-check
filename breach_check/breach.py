@@ -2,7 +2,7 @@
 This module contains the BreachChecker class which is used to check if an email address has been involved in any data breaches.
 """
 from asyncio import ensure_future, gather
-from json import loads as json_loads
+from enum import Enum
 from re import compile
 
 from aiohttp.client_exceptions import ClientProxyConnectionError
@@ -10,14 +10,23 @@ from rich.progress import Progress, TaskID
 
 from breach_check.http import AsyncRequests
 from breach_check.logger import logger, console
+from breach_check.breach_factory.base import ResultSchema
 from breach_check.breach_factory.leakcheck import LeakCheck
+from breach_check.breach_factory.hudsonrock import HudsonRock
+
+class BreachCheckerBackendChoices(Enum):
+    """
+    Enum for breach checker backend choices.
+    """
+    LEAKCHECK = 'leakcheck'
+    HUDSONROCK = 'hudsonrock'
 
 class BreachChecker:
     """
     Wrapper for checking email breaches using breach factory.
     """
 
-    def __init__(self, *args, rate_limit: int = 60, headers: dict | None = None, proxy: str | None = None, ssl: bool | None = True, allow_redirects: bool | None = True, **kwargs) -> None:
+    def __init__(self, *args, rate_limit: int = 60, headers: dict | None = None, proxy: str | None = None, ssl: bool | None = True, allow_redirects: bool | None = True, backend:str='leakcheck',**kwargs) -> None:
         """
         Initialize the BreachCheck object.
 
@@ -49,7 +58,17 @@ class BreachChecker:
             allow_redirects=allow_redirects
         )
 
-        self._breach_factory = LeakCheck(self._http_client)
+        breachfactory = None
+        match backend:
+            case BreachCheckerBackendChoices.HUDSONROCK:
+                breachfactory = HudsonRock
+            case BreachCheckerBackendChoices.LEAKCHECK:
+                breachfactory = LeakCheck
+            case _:
+                raise ValueError('Invalid Backend Choice!')
+            
+        self._breach_factory = breachfactory(self._http_client)
+        self.result_schemas:list[ResultSchema] = []
         
 
     async def mass_check(self, emails: list[str] | None = None):
@@ -80,17 +99,17 @@ class BreachChecker:
                 )
             )
 
-        # try:
-        results = await gather(*tasks)
-
-        self.progress.stop()
-        return results
-        # except Exception as e:
-        #     logger.error(
-        #         f'[*] Exception occurred while gathering results: {e}',
-        #         stack_info=True
-        #     )
-        #     return []
+        try:
+            results = await gather(*tasks)
+            self.progress.stop()
+            self.result_schemas = self._breach_factory.result_schemas
+            return results
+        except Exception as e:
+            logger.error(
+                f'[*] Exception occurred while gathering results: {e}',
+                stack_info=True
+            )
+            return []
 
     async def check(self, email: str | None = None) -> dict:
         """

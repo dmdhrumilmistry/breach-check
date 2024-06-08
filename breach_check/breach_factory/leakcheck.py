@@ -1,8 +1,8 @@
 """
-This module contains the implementation of MozillaMonitor class which checks email breaches using mozilla monitor API.
+This module contains the implementation of LeakCheck class which checks email breaches using mozilla monitor API.
 """
 from json import loads as json_loads
-from breach_check.breach_factory.base import BaseBreachBackend
+from breach_check.breach_factory.base import BaseBreachBackend, ResultSchema
 from breach_check.logger import logger
 from breach_check.http import AsyncRequests
 
@@ -36,12 +36,26 @@ class LeakCheck(BaseBreachBackend):
         status_code = response.get('status')
         res_body = json_loads(response.get('res_body', '{}'))
         is_success = res_body.get('success', False)
+        breach_sources = res_body.get('sources', [])
+        total = res_body.get('found', -1)
 
         if status_code == 200 and is_success:
             logger.warning('Breaches found for %s', email)
-            res_data['breaches'] = res_body.get('sources', [])
+            res_data['breaches'] = breach_sources
             res_data['fields'] = res_body.get('fields', [])
-            res_data['total'] = res_body.get('found', -1)
+            res_data['total'] = total
+
+            breaches = list(filter(
+                lambda domain: domain.strip() if domain else '',
+                [breach.get('name', '').strip()
+                 for breach in breach_sources]
+            ))
+
+            self.result_schemas.append(ResultSchema(
+                email=email,
+                breaches=breaches,
+                total=total
+            ))
 
         elif status_code == 200:
             logger.info('No breaches found for %s', email)
